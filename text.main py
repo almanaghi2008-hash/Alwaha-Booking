@@ -1,0 +1,199 @@
+import sqlite3
+from datetime import datetime
+from typing import Optional
+
+class AlWahaResortSystem:
+    def __init__(self, db_name: str = "alwaha_resort.db"):
+        self.db_name = db_name
+        self.conn = sqlite3.connect(self.db_name)
+        self.conn.row_factory = sqlite3.Row
+        self._init_db()
+        self._seed_units_data()
+
+    def _init_db(self):
+        """إنشاء كافة جداول قاعدة البيانات المرتبطة بالنظام"""
+        cursor = self.conn.cursor()
+        cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS units (
+            unit_id TEXT PRIMARY KEY,
+            unit_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            rental_basis TEXT NOT NULL,
+            capacity INTEGER NOT NULL,
+            price REAL NOT NULL,
+            status TEXT DEFAULT 'جاهز',
+            specs TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS guests (
+            guest_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            phone TEXT UNIQUE NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bookings (
+            booking_id TEXT PRIMARY KEY,
+            guest_id INTEGER,
+            unit_id TEXT,
+            booking_type TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            duration REAL,
+            unit_price REAL,
+            extra_services REAL DEFAULT 0,
+            discount REAL DEFAULT 0,
+            total_amount REAL,
+            paid_deposit REAL,
+            remaining_balance REAL,
+            payment_method TEXT,
+            booking_status TEXT DEFAULT 'مؤكد',
+            FOREIGN KEY (guest_id) REFERENCES guests(guest_id),
+            FOREIGN KEY (unit_id) REFERENCES units(unit_id)
+        );
+        """)
+        self.conn.commit()
+
+    def _seed_units_data(self):
+        """تغذية دليل وحدات ومرافق منتجع الواحة تلقائياً"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM units")
+        if cursor.fetchone()[0] == 0:
+            units_data = [
+                ("FAM-101", "غرفة عائلية 101", "غرفة عائلية", "daily", 4, 35000, "جاهز", "سرير عائلي مزدوج مع حمام داخلي وإطلالة على الحديقة"),
+                ("FAM-102", "غرفة عائلية 102", "غرفة عائلية", "daily", 4, 35000, "جاهز", "سرير عائلي مزدوج مع حمام داخلي وإطلالة على الحديقة"),
+                ("TWN-201", "غرفة سريرين 201", "غرفة سريرين منفصلين", "daily", 2, 25000, "جاهز", "سريران منفصلان مع حمام داخلي وتكييف كامل"),
+                ("TWN-202", "غرفة سريرين 202", "غرفة سريرين منفصلين", "daily", 2, 25000, "جاهز", "سريران منفصلان مع حمام داخلي وتكييف كامل"),
+                ("STE-301", "جناح غرفتين 301", "جناح غرفتين وحمام", "daily", 5, 50000, "جاهز", "غرفتا نوم مستقلتان مع دورة مياه واسعة"),
+                ("STE-401", "جناح VIP 401", "جناح مجلس وغرفة نوم", "daily", 4, 60000, "جاهز", "مجلس ضيوف مستقل + غرفة نوم رئيسية + حمام"),
+                ("APT-501", "شقة مفروشة 501", "شقة متكاملة", "daily", 7, 80000, "جاهز", "غرفتا نوم + مجلس + مطبخ متكامل + حمام"),
+                ("BRD-01", "جناح العرائس الملكي", "غرفة عرسان وتزيين", "daily", 2, 75000, "جاهز", "سرير ملكي وتجهيز ورود وإضاءة وضيافة خاصة"),
+                ("CHL-ROYAL", "الشاليه الملكي", "شاليه ملكي", "daily", 10, 130000, "جاهز", "شاليه فاخر مع حديقة وجلسة عائلية مستقلة"),
+                ("CHL-DLX", "الشاليه الديلوكس", "شاليه ديلوكس", "daily", 8, 100000, "جاهز", "شاليه ديلوكس عائلي متكامل التجهيزات"),
+                ("POOL-A", "مسبح عائلي مغلق (A)", "مسبح عائلي", "hourly", 8, 15000, "جاهز", "مسبح داخلي مغلق ومكيف بالكامل خصوصية تامة"),
+                ("POOL-B", "مسبح عائلي مغلق (B)", "مسبح عائلي", "hourly", 8, 15000, "جاهز", "مسبح داخلي مغلق ومكيف خصوصية تامة"),
+                ("POOL-C", "مسبح عائلي مغلق (C)", "مسبح عائلي", "hourly", 8, 15000, "جاهز", "مسبح داخلي مغلق ومكيف خصوصية تامة"),
+                ("SPA-CLUB", "النادي الصحي المتكامل", "نادي صحي وسبا", "hourly", 10, 25000, "جاهز", "مسبح نادي صحي مع جلسات البخار والساونا")
+            ]
+            cursor.executemany("""
+            INSERT INTO units (unit_id, unit_name, category, rental_basis, capacity, price, status, specs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, units_data)
+            self.conn.commit()
+
+    def get_or_create_guest(self, full_name: str, phone: str) -> int:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT guest_id FROM guests WHERE phone = ?", (phone,))
+        res = cursor.fetchone()
+        if res:
+            return res["guest_id"]
+        cursor.execute("INSERT INTO guests (full_name, phone) VALUES (?, ?)", (full_name, phone))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def check_availability(self, unit_id: str, start_dt: datetime, end_dt: datetime) -> bool:
+        cursor = self.conn.cursor()
+        query = """
+        SELECT start_time, end_time FROM bookings 
+        WHERE unit_id = ? AND booking_status IN ('مؤكد', 'مسكن')
+        """
+        cursor.execute(query, (unit_id,))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            b_start = datetime.strptime(row["start_time"], "%Y-%m-%d %H:%M")
+            b_end = datetime.strptime(row["end_time"], "%Y-%m-%d %H:%M")
+            if max(start_dt, b_start) < min(end_dt, b_end):
+                return False
+        return True
+
+    def create_booking(self, booking_id: str, guest_name: str, guest_phone: str, unit_id: str, 
+                       start_time_str: str, end_time_str: str, deposit: float, 
+                       extra_services: float = 0.0, discount: float = 0.0, payment_method: str = "نقداً"):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM units WHERE unit_id = ?", (unit_id,))
+        unit = cursor.fetchone()
+        if not unit:
+            raise ValueError(f"الوحدة برمز {unit_id} غير مسجلة.")
+
+        dt_format = "%Y-%m-%d %H:%M"
+        start_dt = datetime.strptime(start_time_str, dt_format)
+        end_dt = datetime.strptime(end_time_str, dt_format)
+
+        if not self.check_availability(unit_id, start_dt, end_dt):
+            raise ValueError(f"تعذر الحجز: الوحدة {unit['unit_name']} محجوزة بالفعل في هذا التوقيت.")
+
+        delta = end_dt - start_dt
+        if unit["rental_basis"] == "daily":
+            duration = max(1, delta.days if delta.days > 0 else 1)
+        else:
+            duration = max(1.0, round(delta.total_seconds() / 3600.0, 2))
+
+        base_cost = duration * unit["price"]
+        total_amount = base_cost + extra_services - discount
+        remaining = total_amount - deposit
+        guest_id = self.get_or_create_guest(guest_name, guest_phone)
+
+        cursor.execute("""
+        INSERT INTO bookings (
+            booking_id, guest_id, unit_id, booking_type, start_time, end_time, 
+            duration, unit_price, extra_services, discount, total_amount, paid_deposit, 
+            remaining_balance, payment_method, booking_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'مؤكد')
+        """, (
+            booking_id, guest_id, unit_id, unit["rental_basis"], start_time_str, end_time_str,
+            duration, unit["price"], extra_services, discount, total_amount, deposit,
+            remaining, payment_method
+        ))
+        self.conn.commit()
+        print(f"✓ تم تأكيد الحجز [{booking_id}] بنجاح للضيف: {guest_name} | المتبقي: {remaining:,.0f} ريال")
+
+    def display_units(self):
+        print("\n" + "="*85)
+        print("دليل الوحدات والمرافق المتاحة - منتجع الواحة")
+        print("="*85)
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT unit_id, unit_name, rental_basis, price, capacity, status FROM units")
+        for u in cursor.fetchall():
+            rental_type = "يومي" if u["rental_basis"] == "daily" else "بالساعة"
+            print(f"{u['unit_id']:<10} | {u['unit_name']:<25} | {rental_type:<8} | السعر: {u['price']:>7,.0f} ريال | السعة: {u['capacity']} أفراد")
+        print("="*85)
+
+    def display_dashboard(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""
+        SELECT 
+            COUNT(*) as total_bookings,
+            IFNULL(SUM(total_amount), 0) as total_rev,
+            IFNULL(SUM(paid_deposit), 0) as collected,
+            IFNULL(SUM(remaining_balance), 0) as pending
+        FROM bookings
+        """)
+        stats = cursor.fetchone()
+
+        print("\n" + "="*60)
+        print("لوحة المؤشرات والتقرير المالي - منتجع الواحة")
+        print("="*60)
+        print(f"إجمالي الحجوزات المسجلة: {stats['total_bookings']} حجز")
+        print(f"إجمالي الإيرادات التعاقدية: {stats['total_rev']:,.0f} ريال")
+        print(f"المبالغ المحصلة (العربونات): {stats['collected']:,.0f} ريال")
+        print(f"المتبقي للتحصيل عند الوصول: {stats['pending']:,.0f} ريال")
+        print("="*60)
+
+if __name__ == "__main__":
+    app = AlWahaResortSystem()
+    app.display_units()
+    
+    # حجز تجريبي
+    app.create_booking(
+        booking_id="BK-2026-001",
+        guest_name="عصام عبدالسلام",
+        guest_phone="777123456",
+        unit_id="BRD-01",
+        start_time_str="2026-11-01 14:00",
+        end_time_str="2026-11-02 12:00",
+        deposit=50000,
+        extra_services=5000,
+        payment_method="حوالة بنكية"
+    )
+    
+    app.display_dashboard()
