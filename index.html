@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>منتجع الواحة السياحي - نظام الحجوزات</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .card-header { font-weight: bold; }
+    .kpi-card { border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+  </style>
+</head>
+<body class="py-4">
+
+<div class="container">
+  <div class="text-center mb-4">
+    <h2 class="text-primary fw-bold">منتجع الواحة السياحي</h2>
+    <p class="text-muted">نظام إدارة وتسكين الوحدات والمسابح العائلية والمرافق بالساعة</p>
+  </div>
+
+  <!-- لوحة المؤشرات المالية -->
+  <div class="row g-3 mb-4 text-center">
+    <div class="col-md-4">
+      <div class="card kpi-card bg-primary text-white p-3">
+        <h6>إجمالي الحجوزات</h6>
+        <h3 id="statTotalBookings" class="fw-bold mb-0">0</h3>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card kpi-card bg-success text-white p-3">
+        <h6>المبالغ المحصلة (العربونات)</h6>
+        <h3 id="statTotalPaid" class="fw-bold mb-0">0 ريال</h3>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card kpi-card bg-warning text-dark p-3">
+        <h6>المتبقي للتحصيل عند الوصول</h6>
+        <h3 id="statTotalRemaining" class="fw-bold mb-0">0 ريال</h3>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- نموذج الحجز الجديد -->
+    <div class="col-lg-5">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-dark text-white">تسجيل حجز جديد</div>
+        <div class="card-body">
+          <form id="bookingForm">
+            <div class="mb-2">
+              <label class="form-label">اسم العميل / الضيف</label>
+              <input type="text" id="guestName" class="form-control" required placeholder="مثال: أحمد سالم">
+            </div>
+            <div class="mb-2">
+              <label class="form-label">رقم الهاتف</label>
+              <input type="tel" id="guestPhone" class="form-control" required placeholder="777000000">
+            </div>
+            <div class="mb-2">
+              <label class="form-label">الوحدة / المرفق المطلوب</label>
+              <select id="unitSelect" class="form-select" required></select>
+            </div>
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label" id="lblDuration">المدة (أيام / ساعات)</label>
+                <input type="number" id="duration" class="form-control" min="1" value="1" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label">خدمات إضافية (ريال)</label>
+                <input type="number" id="extraServices" class="form-control" min="0" value="0">
+              </div>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label">العربون المدفوع (ريال)</label>
+                <input type="number" id="deposit" class="form-control" min="0" value="0" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label">طريقة الدفع</label>
+                <select id="payMethod" class="form-select">
+                  <option value="نقداً">نقداً</option>
+                  <option value="حوالة بنكية">حوالة بنكية</option>
+                  <option value="محفظة جوالي/كاش">محفظة إلكترونية</option>
+                </select>
+              </div>
+            </div>
+            <div class="alert alert-info py-2 mb-3">
+              <div>الإجمالي المستحق: <strong id="lblTotalAmount">0</strong> ريال</div>
+              <div>المتبقي عند الدخول: <strong id="lblRemaining">0</strong> ريال</div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">تأكيد وتسجيل الحجز</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- قائمة وسجل الحجوزات -->
+    <div class="col-lg-7">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-white text-dark border-bottom">سجل الحجوزات النشطة</div>
+        <div class="card-body p-0 table-responsive">
+          <table class="table table-hover align-middle mb-0 text-center" style="font-size: 0.9rem;">
+            <thead class="table-light">
+              <tr>
+                <th>رقم الحجز</th>
+                <th>الضيف</th>
+                <th>الوحدة / المرفق</th>
+                <th>المدة</th>
+                <th>الإجمالي</th>
+                <th>المدفوع</th>
+                <th>المتبقي</th>
+              </tr>
+            </thead>
+            <tbody id="bookingsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // دليل وحدات ومنشآت منتجع الواحة
+  const units = [
+    { id: "FAM-101", name: "غرفة عائلية (سرير عائلي + حمام + مطل على الحديقة)", type: "يومي", price: 35000 },
+    { id: "TWN-201", name: "غرفة سريرين منفصلين (مع حمام داخلي)", type: "يومي", price: 25000 },
+    { id: "STE-301", name: "جناح مكون من غرفتين وحمام", type: "يومي", price: 50000 },
+    { id: "STE-401", name: "جناح مكون من مجلس وغرفة نوم وحمام", type: "يومي", price: 60000 },
+    { id: "APT-501", name: "شقة مكونة من غرفتين وحمام ومطبخ ومجلس", type: "يومي", price: 80000 },
+    { id: "BRD-01",  name: "غرفة عرسان ملكية مع التزيين المتكامل", type: "يومي", price: 75000 },
+    { id: "CHL-ROYAL", name: "شاليه ملكي فاخر", type: "يومي", price: 130000 },
+    { id: "CHL-DLX",   name: "شاليه ديلوكس عائلي", type: "يومي", price: 100000 },
+    { id: "POOL-A", name: "مسبح عائلي مغلق ومكيف (A)", type: "بالساعة", price: 15000 },
+    { id: "POOL-B", name: "مسبح عائلي مغلق ومكيف (B)", type: "بالساعة", price: 15000 },
+    { id: "POOL-C", name: "مسبح عائلي مغلق ومكيف (C)", type: "بالساعة", price: 15000 },
+    { id: "SPA-CLUB", name: "النادي الصحي (مسبح + بخار وساونا)", type: "بالساعة", price: 25000 }
+  ];
+
+  let bookings = [];
+
+  // تعبئة القائمة المنسدلة للوحدات
+  const unitSelect = document.getElementById("unitSelect");
+  units.forEach(u => {
+    let opt = document.createElement("option");
+    opt.value = u.id;
+    opt.textContent = `${u.name} - [${u.price.toLocaleString()} ريال / ${u.type}]`;
+    unitSelect.appendChild(opt);
+  });
+
+  function calculateTotals() {
+    const selectedUnit = units.find(u => u.id === unitSelect.value) || units[0];
+    const duration = parseFloat(document.getElementById("duration").value) || 1;
+    const extra = parseFloat(document.getElementById("extraServices").value) || 0;
+    const deposit = parseFloat(document.getElementById("deposit").value) || 0;
+
+    document.getElementById("lblDuration").innerText = `المدة (${selectedUnit.type})`;
+
+    const total = (selectedUnit.price * duration) + extra;
+    const remaining = total - deposit;
+
+    document.getElementById("lblTotalAmount").innerText = total.toLocaleString();
+    document.getElementById("lblRemaining").innerText = remaining.toLocaleString();
+    return { total, remaining, deposit };
+  }
+
+  unitSelect.addEventListener("change", calculateTotals);
+  document.getElementById("duration").addEventListener("input", calculateTotals);
+  document.getElementById("extraServices").addEventListener("input", calculateTotals);
+  document.getElementById("deposit").addEventListener("input", calculateTotals);
+
+  // تسجيل حجز جديد
+  document.getElementById("bookingForm").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const selectedUnit = units.find(u => u.id === unitSelect.value);
+    const { total, remaining, deposit } = calculateTotals();
+
+    const booking = {
+      id: "BK-" + Math.floor(1000 + Math.random() * 9000),
+      guest: document.getElementById("guestName").value,
+      phone: document.getElementById("guestPhone").value,
+      unit: selectedUnit.name.split(" (")[0],
+      duration: `${document.getElementById("duration").value} ${selectedUnit.type}`,
+      total: total,
+      paid: deposit,
+      remaining: remaining
+    };
+
+    bookings.unshift(booking);
+    updateUI();
+    this.reset();
+    calculateTotals();
+  });
+
+  function updateUI() {
+    const tbody = document.getElementById("bookingsTableBody");
+    tbody.innerHTML = "";
+    let totalPaid = 0;
+    let totalRemaining = 0;
+
+    bookings.forEach(b => {
+      totalPaid += b.paid;
+      totalRemaining += b.remaining;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="fw-bold">${b.id}</td>
+        <td>${b.guest}</td>
+        <td>${b.unit}</td>
+        <td>${b.duration}</td>
+        <td>${b.total.toLocaleString()}</td>
+        <td class="text-success">${b.paid.toLocaleString()}</td>
+        <td class="text-danger">${b.remaining.toLocaleString()}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById("statTotalBookings").innerText = bookings.length;
+    document.getElementById("statTotalPaid").innerText = `${totalPaid.toLocaleString()} ريال`;
+    document.getElementById("statTotalRemaining").innerText = `${totalRemaining.toLocaleString()} ريال`;
+  }
+
+  calculateTotals();
+</script>
+</body>
+</html>
